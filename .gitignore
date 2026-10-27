@@ -1,0 +1,7 @@
+.generated-pki/
+inventories/*/group_vars/vault.yml
+*.retry
+.ansible/
+work/
+outputs/
+

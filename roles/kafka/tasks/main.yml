@@ -1,0 +1,26 @@
+---
+- name: Проверить входные параметры
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Установить Kafka
+  ansible.builtin.import_tasks: install.yml
+
+- name: Создать и раздать TLS-сертификаты
+  ansible.builtin.import_tasks: tls.yml
+
+- name: Сформировать конфигурацию Kafka
+  ansible.builtin.import_tasks: configure.yml
+
+- name: Безопасно отформатировать хранилище KRaft
+  ansible.builtin.import_tasks: format.yml
+
+- name: Применить конфигурацию и запустить Kafka
+  ansible.builtin.meta: flush_handlers
+
+- name: Включить автозапуск и запустить Kafka
+  ansible.builtin.systemd:
+    name: kafka
+    enabled: true
+    state: started
+    daemon_reload: true
+

@@ -1,0 +1,19 @@
+---
+- name: Проверить кворум Kafka и прохождение данных
+  hosts: kafka
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Дождаться клиентского порта на каждом брокере
+      ansible.builtin.wait_for:
+        host: "{{ kafka_listen_address }}"
+        port: "{{ kafka_client_port }}"
+        timeout: 90
+
+    - name: Запустить проверочный тест кластера
+      ansible.builtin.include_role:
+        name: kafka
+        tasks_from: verify.yml
+      run_once: true
+

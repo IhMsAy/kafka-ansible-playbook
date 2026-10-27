@@ -1,0 +1,85 @@
+---
+- name: Получить состояние кворума KRaft
+  ansible.builtin.command:
+    argv:
+      - "{{ kafka_home }}/bin/kafka-metadata-quorum.sh"
+      - --bootstrap-server
+      - "127.0.0.1:{{ kafka_client_port }}"
+      - --command-config
+      - "{{ kafka_config_dir }}/admin.properties"
+      - describe
+      - --status
+  become_user: "{{ kafka_user }}"
+  register: kafka_quorum_status
+  changed_when: false
+
+- name: Убедиться, что кворум исправен
+  ansible.builtin.assert:
+    that:
+      - "kafka_cluster_id in kafka_quorum_status.stdout"
+      - "'LeaderId:' in kafka_quorum_status.stdout"
+    fail_msg: "Кворум KRaft неисправен: {{ kafka_quorum_status.stdout }}"
+
+- name: Создать временный топик для проверки
+  ansible.builtin.command:
+    argv:
+      - "{{ kafka_home }}/bin/kafka-topics.sh"
+      - --bootstrap-server
+      - "127.0.0.1:{{ kafka_client_port }}"
+      - --command-config
+      - "{{ kafka_config_dir }}/admin.properties"
+      - --create
+      - --if-not-exists
+      - --topic
+      - __ansible_smoke_test
+      - --partitions
+      - "3"
+      - --replication-factor
+      - "{{ kafka_default_replication_factor | string }}"
+      - --config
+      - retention.ms=3600000
+  become_user: "{{ kafka_user }}"
+  register: kafka_smoke_topic
+  changed_when: "'Created topic' in kafka_smoke_topic.stdout"
+
+- name: Отправить одно тестовое событие
+  ansible.builtin.command:
+    cmd: >-
+      {{ kafka_home }}/bin/kafka-console-producer.sh
+      --bootstrap-server 127.0.0.1:{{ kafka_client_port }}
+      --producer.config {{ kafka_config_dir }}/admin.properties
+      --topic __ansible_smoke_test
+  args:
+    stdin: '{"source":"ansible","status":"ok"}'
+  become_user: "{{ kafka_user }}"
+  changed_when: true
+
+- name: Прочитать тестовое событие
+  ansible.builtin.command:
+    argv:
+      - "{{ kafka_home }}/bin/kafka-console-consumer.sh"
+      - --bootstrap-server
+      - "127.0.0.1:{{ kafka_client_port }}"
+      - --consumer.config
+      - "{{ kafka_config_dir }}/admin.properties"
+      - --topic
+      - __ansible_smoke_test
+      - --from-beginning
+      - --max-messages
+      - "1"
+      - --timeout-ms
+      - "15000"
+  become_user: "{{ kafka_user }}"
+  register: kafka_smoke_consume
+  changed_when: false
+
+- name: Проверить прохождение события от начала до конца
+  ansible.builtin.assert:
+    that:
+      - '"status":"ok" in kafka_smoke_consume.stdout'
+    fail_msg: Не удалось отправить и прочитать тестовое сообщение Kafka.
+
+- name: Вывести состояние кворума
+  ansible.builtin.debug:
+    var: kafka_quorum_status.stdout_lines
+

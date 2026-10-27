@@ -1,0 +1,48 @@
+# Файл управляется Ansible. Ручные изменения будут перезаписаны.
+process.roles=broker,controller
+node.id={{ kafka_node_id }}
+controller.quorum.voters={% for host in groups['kafka'] %}{{ hostvars[host].kafka_node_id }}@{{ hostvars[host].kafka_advertised_host }}:{{ kafka_controller_port }}{% if not loop.last %},{% endif %}{% endfor %}
+
+listeners=INTERNAL://{{ kafka_listen_address }}:{{ kafka_internal_port }},CONTROLLER://{{ kafka_listen_address }}:{{ kafka_controller_port }},CLIENT://{{ kafka_listen_address }}:{{ kafka_client_port }}
+advertised.listeners=INTERNAL://{{ kafka_advertised_host }}:{{ kafka_internal_port }},CLIENT://{{ kafka_advertised_host }}:{{ kafka_client_port }}
+listener.security.protocol.map=CONTROLLER:SSL,INTERNAL:SSL,CLIENT:SASL_SSL
+inter.broker.listener.name=INTERNAL
+controller.listener.names=CONTROLLER
+
+ssl.keystore.type=PKCS12
+ssl.keystore.location={{ kafka_config_dir }}/tls/keystore.p12
+ssl.keystore.password={{ kafka_keystore_password }}
+ssl.key.password={{ kafka_keystore_password }}
+ssl.truststore.type=PKCS12
+ssl.truststore.location={{ kafka_config_dir }}/tls/truststore.p12
+ssl.truststore.password={{ kafka_truststore_password }}
+ssl.client.auth=none
+listener.name.internal.ssl.client.auth=required
+listener.name.controller.ssl.client.auth=required
+ssl.endpoint.identification.algorithm=https
+
+listener.name.client.sasl.enabled.mechanisms=SCRAM-SHA-512
+sasl.enabled.mechanisms=SCRAM-SHA-512
+
+authorizer.class.name=org.apache.kafka.metadata.authorizer.StandardAuthorizer
+allow.everyone.if.no.acl.found=false
+super.users=User:{{ kafka_admin_username }}
+
+log.dirs={{ kafka_data_dir }}
+num.network.threads={{ kafka_num_network_threads }}
+num.io.threads={{ kafka_num_io_threads }}
+socket.send.buffer.bytes={{ kafka_socket_send_buffer_bytes }}
+socket.receive.buffer.bytes={{ kafka_socket_receive_buffer_bytes }}
+socket.request.max.bytes={{ kafka_socket_request_max_bytes }}
+num.partitions={{ kafka_num_partitions }}
+default.replication.factor={{ kafka_default_replication_factor }}
+min.insync.replicas={{ kafka_min_insync_replicas }}
+offsets.topic.replication.factor={{ kafka_default_replication_factor }}
+transaction.state.log.replication.factor={{ kafka_default_replication_factor }}
+transaction.state.log.min.isr={{ kafka_min_insync_replicas }}
+auto.create.topics.enable=false
+unclean.leader.election.enable=false
+log.retention.hours={{ kafka_log_retention_hours }}
+log.segment.bytes={{ kafka_log_segment_bytes }}
+log.retention.check.interval.ms=300000
+

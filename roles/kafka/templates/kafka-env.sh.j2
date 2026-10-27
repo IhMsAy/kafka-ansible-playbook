@@ -1,0 +1,5 @@
+KAFKA_HEAP_OPTS="{{ kafka_heap_opts }}"
+KAFKA_LOG4J_OPTS="-Dlog4j2.configurationFile={{ kafka_home }}/config/log4j2.yaml"
+KAFKA_OPTS="-Djava.net.preferIPv4Stack=true"
+LOG_DIR="{{ kafka_log_dir }}"
+

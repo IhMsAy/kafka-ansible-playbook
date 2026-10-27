@@ -1,0 +1,196 @@
+---
+- name: Создать каталог PKI на управляющем компьютере
+  ansible.builtin.file:
+    path: "{{ kafka_pki_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Создать закрытый ключ центра сертификации
+  community.crypto.openssl_privatekey:
+    path: "{{ kafka_pki_dir }}/ca.key"
+    size: 4096
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Создать запрос сертификата центра сертификации
+  community.crypto.openssl_csr:
+    path: "{{ kafka_pki_dir }}/ca.csr"
+    privatekey_path: "{{ kafka_pki_dir }}/ca.key"
+    common_name: "{{ kafka_cluster_name }} Kafka CA"
+    basic_constraints:
+      - CA:TRUE
+    basic_constraints_critical: true
+    key_usage:
+      - keyCertSign
+      - cRLSign
+    key_usage_critical: true
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Создать самоподписанный сертификат центра сертификации
+  community.crypto.x509_certificate:
+    path: "{{ kafka_pki_dir }}/ca.crt"
+    privatekey_path: "{{ kafka_pki_dir }}/ca.key"
+    csr_path: "{{ kafka_pki_dir }}/ca.csr"
+    provider: selfsigned
+    selfsigned_not_after: +3650d
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Создать закрытые ключи брокеров
+  community.crypto.openssl_privatekey:
+    path: "{{ kafka_pki_dir }}/{{ item }}.key"
+    size: 3072
+    mode: "0600"
+  loop: "{{ groups['kafka'] }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Создать запросы сертификатов брокеров
+  community.crypto.openssl_csr:
+    path: "{{ kafka_pki_dir }}/{{ item }}.csr"
+    privatekey_path: "{{ kafka_pki_dir }}/{{ item }}.key"
+    common_name: "{{ hostvars[item].kafka_advertised_host }}"
+    subject_alt_name:
+      - "DNS:{{ item }}"
+      - "DNS:{{ hostvars[item].kafka_advertised_host }}"
+    key_usage:
+      - digitalSignature
+      - keyEncipherment
+    extended_key_usage:
+      - serverAuth
+      - clientAuth
+  loop: "{{ groups['kafka'] }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Подписать сертификаты брокеров центром сертификации
+  community.crypto.x509_certificate:
+    path: "{{ kafka_pki_dir }}/{{ item }}.crt"
+    csr_path: "{{ kafka_pki_dir }}/{{ item }}.csr"
+    ownca_path: "{{ kafka_pki_dir }}/ca.crt"
+    ownca_privatekey_path: "{{ kafka_pki_dir }}/ca.key"
+    provider: ownca
+    ownca_not_after: +825d
+  loop: "{{ groups['kafka'] }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Скопировать TLS-файлы на брокер
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ kafka_config_dir }}/tls/{{ item.dest }}"
+    owner: "{{ kafka_user }}"
+    group: "{{ kafka_group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {src: "{{ kafka_pki_dir }}/ca.crt", dest: ca.crt, mode: "0644"}
+    - {src: "{{ kafka_pki_dir }}/{{ inventory_hostname }}.crt", dest: broker.crt, mode: "0644"}
+    - {src: "{{ kafka_pki_dir }}/{{ inventory_hostname }}.key", dest: broker.key, mode: "0600"}
+  register: kafka_tls_material
+  notify: restart kafka
+
+- name: Проверить созданные TLS-хранилища
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ kafka_config_dir }}/tls/keystore.p12"
+    - "{{ kafka_config_dir }}/tls/truststore.p12"
+    - "{{ kafka_config_dir }}/tls/.keystore-password-{{ kafka_keystore_password | hash('sha256') }}"
+    - "{{ kafka_config_dir }}/tls/.truststore-password-{{ kafka_truststore_password | hash('sha256') }}"
+  register: kafka_tls_stores
+  no_log: true
+
+- name: Создать PKCS12-хранилище ключа брокера
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - pkcs12
+      - -export
+      - -name
+      - kafka
+      - -inkey
+      - "{{ kafka_config_dir }}/tls/broker.key"
+      - -in
+      - "{{ kafka_config_dir }}/tls/broker.crt"
+      - -certfile
+      - "{{ kafka_config_dir }}/tls/ca.crt"
+      - -out
+      - "{{ kafka_config_dir }}/tls/keystore.p12"
+      - -passout
+      - stdin
+    stdin: "{{ kafka_keystore_password }}"
+  when: >-
+    kafka_tls_material.changed or
+    not kafka_tls_stores.results[0].stat.exists or
+    not kafka_tls_stores.results[2].stat.exists
+  no_log: true
+  notify: restart kafka
+
+- name: Удалить устаревшее хранилище доверия перед пересозданием
+  ansible.builtin.file:
+    path: "{{ kafka_config_dir }}/tls/truststore.p12"
+    state: absent
+  when: >-
+    kafka_tls_material.changed or
+    not kafka_tls_stores.results[1].stat.exists or
+    not kafka_tls_stores.results[3].stat.exists
+  no_log: true
+
+- name: Создать PKCS12-хранилище доверия брокера
+  ansible.builtin.command:
+    argv:
+      - keytool
+      - -importcert
+      - -noprompt
+      - -storetype
+      - PKCS12
+      - -alias
+      - kafka-ca
+      - -file
+      - "{{ kafka_config_dir }}/tls/ca.crt"
+      - -keystore
+      - "{{ kafka_config_dir }}/tls/truststore.p12"
+      - -storepass
+      - "{{ kafka_truststore_password }}"
+  when: >-
+    kafka_tls_material.changed or
+    not kafka_tls_stores.results[1].stat.exists or
+    not kafka_tls_stores.results[3].stat.exists
+  no_log: true
+  notify: restart kafka
+
+- name: Сохранить служебные отметки паролей TLS
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    owner: "{{ kafka_user }}"
+    group: "{{ kafka_group }}"
+    mode: "0600"
+    modification_time: preserve
+    access_time: preserve
+  loop:
+    - "{{ kafka_config_dir }}/tls/.keystore-password-{{ kafka_keystore_password | hash('sha256') }}"
+    - "{{ kafka_config_dir }}/tls/.truststore-password-{{ kafka_truststore_password | hash('sha256') }}"
+  no_log: true
+
+- name: Ограничить доступ к созданным хранилищам
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "{{ kafka_user }}"
+    group: "{{ kafka_group }}"
+    mode: "0600"
+  loop:
+    - "{{ kafka_config_dir }}/tls/keystore.p12"
+    - "{{ kafka_config_dir }}/tls/truststore.p12"
+

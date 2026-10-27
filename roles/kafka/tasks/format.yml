@@ -1,0 +1,23 @@
+---
+- name: Проверить, отформатировано ли хранилище KRaft
+  ansible.builtin.stat:
+    path: "{{ kafka_data_dir }}/meta.properties"
+  register: kafka_meta_properties
+
+- name: Отформатировать KRaft и создать администратора
+  ansible.builtin.command:
+    argv:
+      - "{{ kafka_home }}/bin/kafka-storage.sh"
+      - format
+      - -t
+      - "{{ kafka_cluster_id }}"
+      - -c
+      - "{{ kafka_config_dir }}/server.properties"
+      - --add-scram
+      - >-
+        SCRAM-SHA-512=[name={{ kafka_admin_username }},password={{ kafka_admin_password }}]
+  become_user: "{{ kafka_user }}"
+  when: not kafka_meta_properties.stat.exists
+  no_log: true
+  notify: restart kafka
+

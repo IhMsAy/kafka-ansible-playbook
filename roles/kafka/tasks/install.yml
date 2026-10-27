@@ -1,0 +1,64 @@
+---
+- name: Установить Java, TLS и инструменты архивирования
+  ansible.builtin.package:
+    name:
+      - "{{ kafka_java_packages[ansible_os_family] }}"
+      - openssl
+      - tar
+    state: present
+
+- name: Создать системную группу Kafka
+  ansible.builtin.group:
+    name: "{{ kafka_group }}"
+    system: true
+
+- name: Создать системного пользователя Kafka
+  ansible.builtin.user:
+    name: "{{ kafka_user }}"
+    group: "{{ kafka_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ kafka_state_dir }}"
+    create_home: false
+
+- name: Создать каталоги Kafka
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default(kafka_user) }}"
+    group: "{{ item.group | default(kafka_group) }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "{{ kafka_install_root }}", owner: root, group: root, mode: "0755"}
+    - {path: "{{ kafka_config_dir }}", mode: "0750"}
+    - {path: "{{ kafka_config_dir }}/tls", mode: "0750"}
+    - {path: "{{ kafka_data_dir }}", mode: "0750"}
+    - {path: "{{ kafka_log_dir }}", mode: "0750"}
+    - {path: "{{ kafka_state_dir }}", mode: "0750"}
+
+- name: Скачать зафиксированную версию Kafka
+  ansible.builtin.get_url:
+    url: "{{ kafka_download_url }}"
+    dest: "/tmp/kafka_{{ kafka_scala_version }}-{{ kafka_version }}.tgz"
+    checksum: "sha512:{{ kafka_download_sha512 }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Распаковать Kafka
+  ansible.builtin.unarchive:
+    src: "/tmp/kafka_{{ kafka_scala_version }}-{{ kafka_version }}.tgz"
+    dest: "{{ kafka_install_root }}"
+    remote_src: true
+    creates: "{{ kafka_install_dir }}/bin/kafka-server-start.sh"
+
+- name: Создать постоянную ссылку на установленную версию
+  ansible.builtin.file:
+    src: "{{ kafka_install_dir }}"
+    dest: "{{ kafka_home }}"
+    state: link
+    force: true
+    owner: root
+    group: root
+  notify: restart kafka
+

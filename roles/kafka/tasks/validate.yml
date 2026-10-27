@@ -1,0 +1,30 @@
+---
+- name: Проверить общие параметры кластера
+  ansible.builtin.assert:
+    that:
+      - groups['kafka'] | length >= 3
+      - groups['kafka'] | length % 2 == 1
+      - kafka_cluster_id | length >= 16
+      - kafka_download_sha512 | length == 128
+      - kafka_admin_password | length >= 16
+      - kafka_keystore_password | length >= 16
+      - kafka_truststore_password | length >= 16
+      - >-
+        groups['kafka'] | map('extract', hostvars, 'kafka_node_id') | list | unique | length
+        == groups['kafka'] | length
+      - kafka_default_replication_factor | int <= groups['kafka'] | length
+      - kafka_min_insync_replicas | int < kafka_default_replication_factor | int
+    fail_msg: >-
+      Ошибка топологии или секретов Kafka. Нужны минимум три узла (обязательно нечётное количество),
+      уникальные kafka_node_id, постоянный cluster ID, контрольная сумма SHA-512
+      и пароли длиной не менее 16 символов.
+  run_once: true
+  no_log: true
+
+- name: Проверить идентификатор текущего брокера
+  ansible.builtin.assert:
+    that:
+      - kafka_node_id | int > 0
+      - kafka_advertised_host | length > 0
+    fail_msg: kafka_node_id должен быть положительным, а kafka_advertised_host — доступным клиентам через DNS.
+

@@ -1,0 +1,22 @@
+---
+- name: Установить и настроить кластер Kafka KRaft
+  hosts: kafka
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - role: kafka
+
+- name: Настроить пользователей и ACL после запуска кворума
+  hosts: kafka
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Создать клиентских пользователей и ACL
+      ansible.builtin.include_role:
+        name: kafka
+        tasks_from: users.yml
+      run_once: true
+

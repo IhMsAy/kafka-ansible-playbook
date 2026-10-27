@@ -1,0 +1,46 @@
+---
+# Создайте один раз командой: /opt/kafka/bin/kafka-storage.sh random-uuid
+# Не изменяйте значение после первого развёртывания.
+kafka_cluster_id: MkU3OEVBNTcwNTJENDM2Qk
+kafka_cluster_name: analytics
+
+kafka_version: 4.3.1
+kafka_scala_version: "2.13"
+kafka_download_sha512: >-
+  c7d7b2318cb51aa0c61d3246a51c349210073c5c9b754947ef965a439f2f939e8600f204e134a75ac31faf3829c9370960ef7c6a9886c8a1dbf0339a21f4c54c
+
+kafka_heap_opts: "-Xms2g -Xmx2g"
+kafka_log_retention_hours: 168
+kafka_log_segment_bytes: 1073741824
+kafka_num_partitions: 12
+kafka_default_replication_factor: 3
+kafka_min_insync_replicas: 2
+
+# Пароли намеренно хранятся в зашифрованном файле Ansible Vault.
+kafka_admin_password: "{{ vault_kafka_admin_password }}"
+kafka_keystore_password: "{{ vault_kafka_keystore_password }}"
+kafka_truststore_password: "{{ vault_kafka_truststore_password }}"
+
+kafka_sasl_users:
+  - username: analytics-producer
+    password: "{{ vault_kafka_producer_password }}"
+  - username: clickhouse
+    password: "{{ vault_kafka_clickhouse_password }}"
+
+kafka_acls:
+  - principal: analytics-producer
+    resource_type: topic
+    resource_name: user-events
+    pattern_type: prefixed
+    operations: [Write, Create, Describe]
+  - principal: clickhouse
+    resource_type: topic
+    resource_name: user-events
+    pattern_type: prefixed
+    operations: [Read, Describe]
+  - principal: clickhouse
+    resource_type: group
+    resource_name: clickhouse-
+    pattern_type: prefixed
+    operations: [Read, Describe]
+

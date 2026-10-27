@@ -1,0 +1,27 @@
+[Unit]
+Description=Apache Kafka KRaft broker and controller
+Documentation=https://kafka.apache.org/documentation/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User={{ kafka_user }}
+Group={{ kafka_group }}
+EnvironmentFile={{ kafka_config_dir }}/kafka-env.sh
+ExecStart={{ kafka_home }}/bin/kafka-server-start.sh {{ kafka_config_dir }}/server.properties
+ExecStop={{ kafka_home }}/bin/kafka-server-stop.sh
+Restart=on-failure
+RestartSec=10
+SuccessExitStatus=143
+LimitNOFILE=100000
+TimeoutStopSec=180
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths={{ kafka_data_dir }} {{ kafka_log_dir }}
+
+[Install]
+WantedBy=multi-user.target
+

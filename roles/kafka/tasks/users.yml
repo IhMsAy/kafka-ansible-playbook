@@ -1,0 +1,68 @@
+---
+- name: Дождаться защищённого порта Kafka
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ kafka_client_port }}"
+    timeout: 120
+
+- name: Проверить служебные отметки паролей SCRAM
+  ansible.builtin.stat:
+    path: >-
+      {{ kafka_state_dir }}/.scram-{{ item.username }}-{{ item.password | hash('sha256') }}
+  loop: "{{ kafka_sasl_users }}"
+  register: kafka_scram_markers
+  no_log: true
+
+- name: Создать или обновить учётные данные SCRAM
+  ansible.builtin.command:
+    argv:
+      - "{{ kafka_home }}/bin/kafka-configs.sh"
+      - --bootstrap-server
+      - "127.0.0.1:{{ kafka_client_port }}"
+      - --command-config
+      - "{{ kafka_config_dir }}/admin.properties"
+      - --alter
+      - --add-config
+      - >-
+        SCRAM-SHA-512=[iterations={{ kafka_scram_iterations }},password={{ item.item.password }}]
+      - --entity-type
+      - users
+      - --entity-name
+      - "{{ item.item.username }}"
+  loop: "{{ kafka_scram_markers.results }}"
+  when: not item.stat.exists
+  become_user: "{{ kafka_user }}"
+  no_log: true
+
+- name: Сохранить служебные отметки SCRAM
+  ansible.builtin.file:
+    path: >-
+      {{ kafka_state_dir }}/.scram-{{ item.item.username }}-{{ item.item.password | hash('sha256') }}
+    state: touch
+    owner: "{{ kafka_user }}"
+    group: "{{ kafka_group }}"
+    mode: "0600"
+    modification_time: preserve
+    access_time: preserve
+  loop: "{{ kafka_scram_markers.results }}"
+  when: not item.stat.exists
+  no_log: true
+
+- name: Применить описанные правила ACL
+  ansible.builtin.command:
+    argv: >-
+      {{
+        [kafka_home + '/bin/kafka-acls.sh',
+         '--bootstrap-server', '127.0.0.1:' + (kafka_client_port | string),
+         '--command-config', kafka_config_dir + '/admin.properties',
+         '--add', '--allow-principal', 'User:' + item.0.principal,
+         '--operation', item.1,
+         '--resource-pattern-type', item.0.pattern_type,
+         '--' + item.0.resource_type, item.0.resource_name]
+      }}
+  loop: "{{ kafka_acls | subelements('operations') }}"
+  become_user: "{{ kafka_user }}"
+  register: kafka_acl_result
+  # Kafka хранит ACL как множество, поэтому повторный запуск не создаёт дубликаты.
+  changed_when: false
+

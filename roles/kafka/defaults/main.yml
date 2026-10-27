@@ -1,0 +1,51 @@
+---
+kafka_version: 4.3.1
+kafka_scala_version: "2.13"
+kafka_download_url: >-
+  https://archive.apache.org/dist/kafka/{{ kafka_version }}/kafka_{{ kafka_scala_version }}-{{ kafka_version }}.tgz
+kafka_download_sha512: ""
+
+kafka_user: kafka
+kafka_group: kafka
+kafka_install_root: /opt
+kafka_install_dir: "{{ kafka_install_root }}/kafka_{{ kafka_scala_version }}-{{ kafka_version }}"
+kafka_home: /opt/kafka
+kafka_config_dir: /etc/kafka
+kafka_data_dir: /var/lib/kafka/data
+kafka_log_dir: /var/log/kafka
+kafka_state_dir: /var/lib/kafka
+kafka_pki_dir: "{{ playbook_dir }}/.generated-pki/{{ kafka_cluster_name }}"
+
+kafka_cluster_name: kafka
+kafka_cluster_id: ""
+kafka_node_id: 0
+kafka_advertised_host: "{{ inventory_hostname }}"
+kafka_listen_address: 0.0.0.0
+kafka_controller_port: 9093
+kafka_internal_port: 9092
+kafka_client_port: 9094
+
+kafka_heap_opts: "-Xms1g -Xmx1g"
+kafka_num_network_threads: 3
+kafka_num_io_threads: 8
+kafka_num_partitions: 12
+kafka_default_replication_factor: 3
+kafka_min_insync_replicas: 2
+kafka_log_retention_hours: 168
+kafka_log_segment_bytes: 1073741824
+kafka_socket_send_buffer_bytes: 102400
+kafka_socket_receive_buffer_bytes: 102400
+kafka_socket_request_max_bytes: 104857600
+
+kafka_admin_username: admin
+kafka_admin_password: ""
+kafka_keystore_password: ""
+kafka_truststore_password: ""
+kafka_sasl_users: []
+kafka_acls: []
+kafka_scram_iterations: 8192
+
+kafka_java_packages:
+  Debian: openjdk-17-jre-headless
+  RedHat: java-17-openjdk-headless
+
